@@ -1,16 +1,17 @@
 {
-	"name": "catfan/medoo",
+	"name": "nahid/medoo",
 	"type": "framework",
 	"description": "The lightweight PHP database framework to accelerate development",
 	"keywords": ["database", "database library", "lightweight", "PHP framework", "SQL", "MySQL", "MSSQL", "SQLite", "PostgreSQL", "MariaDB", "Oracle"],
 	"homepage": "https://medoo.in",
 	"license": "MIT",
 	"support": {
-		"issues": "https://github.com/catfan/Medoo/issues",
-		"source": "https://github.com/catfan/Medoo"
+		"issues": "https://github.com/nahid/Medoo/issues",
+		"source": "https://github.com/nahid/Medoo"
 	},
 	"authors": [
-		{"name": "Angel Lai", "email": "angel@catfan.me"}
+		{"name": "Angel Lai", "email": "angel@catfan.me"},
+		{"name": "Nahid Bin Azhar", "email": "nahid.dns@gmail.com"}
 	],
 	"require": {
 		"php": ">=5.4",

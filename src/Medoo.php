@@ -23,10 +23,14 @@ class Raw {
 
 class Medoo implements \SplSubject
 {
+    const EVENT_CON_START_AT = 'db:con.start_at';
+    const EVENT_CON_END_AT = 'db:con.end_at';
     const EVENT_CON_BEFORE = 'db:con.before';
     const EVENT_CON_SUCCESS = 'db:con.success';
     const EVENT_CON_FAILS = 'db:con.fails';
     const EVENT_QUERY_BEFORE = 'db:query.before';
+    const EVENT_QUERY_START_AT = 'db:query.start_at';
+    const EVENT_QUERY_END_AT = 'db:query.end_at';
     const EVENT_QUERY_SUCCESS = 'db:query.success';
     const EVENT_QUERY_FAILS = 'db:query.fails';
 
@@ -326,6 +330,7 @@ class Medoo implements \SplSubject
         $this->dsn = $dsn;
 
         try {
+            $this->notify(self::EVENT_CON_START_AT, microtime(true));
             $this->notify(self::EVENT_CON_BEFORE, $options);
             $this->pdo = new PDO(
                 $dsn,
@@ -338,6 +343,7 @@ class Medoo implements \SplSubject
             {
                 $this->pdo->exec($value);
             }
+            $this->notify(self::EVENT_CON_END_AT, microtime(true));
             $this->notify(self::EVENT_CON_SUCCESS, $this->pdo);
             return $this;
 
@@ -380,6 +386,7 @@ class Medoo implements \SplSubject
 		}
 
 		$this->notify(self::EVENT_QUERY_BEFORE, $query);
+		$this->notify(self::EVENT_QUERY_START_AT, microtime(true));
 		$statement = $this->pdo->prepare($query);
 
 		if (!$statement)
@@ -403,10 +410,11 @@ class Medoo implements \SplSubject
 
 		if (!$execute)
 		{
-		    $this->notify(self::EVENT_CON_FAILS, $statement->errorInfo());
+		    $this->notify(self::EVENT_QUERY_FAILS, $statement->errorInfo());
 			$this->statement = null;
 		}
 
+		$this->notify(self::EVENT_QUERY_END_AT, microtime(true));
 		$this->notify(self::EVENT_QUERY_SUCCESS, $statement);
 
 		return $statement;

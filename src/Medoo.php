@@ -23,6 +23,13 @@ class Raw {
 
 class Medoo implements \SplSubject
 {
+    const EVENT_CON_BEFORE = 'db:con.before';
+    const EVENT_CON_SUCCESS = 'db:con.success';
+    const EVENT_CON_FAILS = 'db:con.fails';
+    const EVENT_QUERY_BEFORE = 'db:query.before';
+    const EVENT_QUERY_SUCCESS = 'db:query.success';
+    const EVENT_QUERY_FAILS = 'db:query.fails';
+
 	public $pdo;
 
 	protected $type;
@@ -319,7 +326,7 @@ class Medoo implements \SplSubject
         $this->dsn = $dsn;
 
         try {
-            $this->notify('db:connection.before', $options);
+            $this->notify(self::EVENT_CON_BEFORE, $options);
             $this->pdo = new PDO(
                 $dsn,
                 isset($options[ 'username' ]) ? $options[ 'username' ] : null,
@@ -331,12 +338,12 @@ class Medoo implements \SplSubject
             {
                 $this->pdo->exec($value);
             }
-            $this->notify('db:connection.success', $this->pdo);
+            $this->notify(self::EVENT_CON_SUCCESS, $this->pdo);
             return $this;
 
         }
         catch (PDOException $e) {
-            $this->notify('db:connection.fails', $e);
+            $this->notify(self::EVENT_CON_FAILS, $e);
             throw new PDOException($e->getMessage());
         }
 	}
@@ -372,7 +379,7 @@ class Medoo implements \SplSubject
 			$this->logs = [[$query, $map]];
 		}
 
-		$this->notify('db:query.before', $query);
+		$this->notify(self::EVENT_QUERY_BEFORE, $query);
 		$statement = $this->pdo->prepare($query);
 
 		if (!$statement)
@@ -391,14 +398,16 @@ class Medoo implements \SplSubject
 		}
 
 		$execute = $statement->execute();
-		$this->notify('db:query.after', $execute);
 
 		$this->errorInfo = $statement->errorInfo();
 
 		if (!$execute)
 		{
+		    $this->notify(self::EVENT_CON_FAILS, $statement->errorInfo());
 			$this->statement = null;
 		}
+
+		$this->notify(self::EVENT_QUERY_SUCCESS, $statement);
 
 		return $statement;
 	}

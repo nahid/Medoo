@@ -14,13 +14,14 @@ use PDO;
 use Exception;
 use PDOException;
 use InvalidArgumentException;
+use SplObserver;
 
 class Raw {
 	public $map;
 	public $value;
 }
 
-class Medoo
+class Medoo implements \SplSubject
 {
 	public $pdo;
 
@@ -42,286 +43,302 @@ class Medoo
 
 	protected $errorInfo = null;
 
-	public function __construct(array $options)
+	protected $observers = [];
+
+	public function __construct(array $options = null)
 	{
-		if (isset($options[ 'database_type' ]))
-		{
-			$this->type = strtolower($options[ 'database_type' ]);
+        $this->observers['*'] = [];
 
-			if ($this->type === 'mariadb')
-			{
-				$this->type = 'mysql';
-			}
-		}
+	    if (!is_null($options)) {
+	        $this->connect($options);
+        }
+	}
 
-		if (isset($options[ 'prefix' ]))
-		{
-			$this->prefix = $options[ 'prefix' ];
-		}
+    public function connect(array $options)
+    {
+        if (isset($options[ 'database_type' ]))
+        {
+            $this->type = strtolower($options[ 'database_type' ]);
 
-		if (isset($options[ 'logging' ]) && is_bool($options[ 'logging' ]))
-		{
-			$this->logging = $options[ 'logging' ];
-		}
+            if ($this->type === 'mariadb')
+            {
+                $this->type = 'mysql';
+            }
+        }
 
-		$option = isset($options[ 'option' ]) ? $options[ 'option' ] : [];
-		$commands = (isset($options[ 'command' ]) && is_array($options[ 'command' ])) ? $options[ 'command' ] : [];
+        if (isset($options[ 'prefix' ]))
+        {
+            $this->prefix = $options[ 'prefix' ];
+        }
 
-		switch ($this->type)
-		{
-			case 'mysql':
-				// Make MySQL using standard quoted identifier
-				$commands[] = 'SET SQL_MODE=ANSI_QUOTES';
+        if (isset($options[ 'logging' ]) && is_bool($options[ 'logging' ]))
+        {
+            $this->logging = $options[ 'logging' ];
+        }
 
-				break;
+        $option = isset($options[ 'option' ]) ? $options[ 'option' ] : [];
+        $commands = (isset($options[ 'command' ]) && is_array($options[ 'command' ])) ? $options[ 'command' ] : [];
 
-			case 'mssql':
-				// Keep MSSQL QUOTED_IDENTIFIER is ON for standard quoting
-				$commands[] = 'SET QUOTED_IDENTIFIER ON';
+        switch ($this->type)
+        {
+            case 'mysql':
+                // Make MySQL using standard quoted identifier
+                $commands[] = 'SET SQL_MODE=ANSI_QUOTES';
 
-				// Make ANSI_NULLS is ON for NULL value
-				$commands[] = 'SET ANSI_NULLS ON';
+                break;
 
-				break;
-		}
+            case 'mssql':
+                // Keep MSSQL QUOTED_IDENTIFIER is ON for standard quoting
+                $commands[] = 'SET QUOTED_IDENTIFIER ON';
 
-		if (isset($options[ 'pdo' ]))
-		{
-			if (!$options[ 'pdo' ] instanceof PDO)
-			{
-				throw new InvalidArgumentException('Invalid PDO object supplied');
-			}
+                // Make ANSI_NULLS is ON for NULL value
+                $commands[] = 'SET ANSI_NULLS ON';
 
-			$this->pdo = $options[ 'pdo' ];
+                break;
+        }
 
-			foreach ($commands as $value)
-			{
-				$this->pdo->exec($value);
-			}
+        if (isset($options[ 'pdo' ]))
+        {
+            if (!$options[ 'pdo' ] instanceof PDO)
+            {
+                throw new InvalidArgumentException('Invalid PDO object supplied');
+            }
 
-			return;
-		}
+            $this->pdo = $options[ 'pdo' ];
 
-		if (isset($options[ 'dsn' ]))
-		{
-			if (is_array($options[ 'dsn' ]) && isset($options[ 'dsn' ][ 'driver' ]))
-			{
-				$attr = $options[ 'dsn' ];
-			}
-			else
-			{
-				throw new InvalidArgumentException('Invalid DSN option supplied');
-			}
-		}
-		else
-		{
-			if (
-				isset($options[ 'port' ]) &&
-				is_int($options[ 'port' ] * 1)
-			)
-			{
-				$port = $options[ 'port' ];
-			}
+            foreach ($commands as $value)
+            {
+                $this->pdo->exec($value);
+            }
 
-			$is_port = isset($port);
+            return;
+        }
 
-			switch ($this->type)
-			{
-				case 'mysql':
-					$attr = [
-						'driver' => 'mysql',
-						'dbname' => $options[ 'database_name' ]
-					];
+        if (isset($options[ 'dsn' ]))
+        {
+            if (is_array($options[ 'dsn' ]) && isset($options[ 'dsn' ][ 'driver' ]))
+            {
+                $attr = $options[ 'dsn' ];
+            }
+            else
+            {
+                throw new InvalidArgumentException('Invalid DSN option supplied');
+            }
+        }
+        else
+        {
+            if (
+                isset($options[ 'port' ]) &&
+                is_int($options[ 'port' ] * 1)
+            )
+            {
+                $port = $options[ 'port' ];
+            }
 
-					if (isset($options[ 'socket' ]))
-					{
-						$attr[ 'unix_socket' ] = $options[ 'socket' ];
-					}
-					else
-					{
-						$attr[ 'host' ] = $options[ 'server' ];
+            $is_port = isset($port);
 
-						if ($is_port)
-						{
-							$attr[ 'port' ] = $port;
-						}
-					}
+            switch ($this->type)
+            {
+                case 'mysql':
+                    $attr = [
+                        'driver' => 'mysql',
+                        'dbname' => $options[ 'database_name' ]
+                    ];
 
-					break;
+                    if (isset($options[ 'socket' ]))
+                    {
+                        $attr[ 'unix_socket' ] = $options[ 'socket' ];
+                    }
+                    else
+                    {
+                        $attr[ 'host' ] = $options[ 'server' ];
 
-				case 'pgsql':
-					$attr = [
-						'driver' => 'pgsql',
-						'host' => $options[ 'server' ],
-						'dbname' => $options[ 'database_name' ]
-					];
+                        if ($is_port)
+                        {
+                            $attr[ 'port' ] = $port;
+                        }
+                    }
 
-					if ($is_port)
-					{
-						$attr[ 'port' ] = $port;
-					}
+                    break;
 
-					break;
+                case 'pgsql':
+                    $attr = [
+                        'driver' => 'pgsql',
+                        'host' => $options[ 'server' ],
+                        'dbname' => $options[ 'database_name' ]
+                    ];
 
-				case 'sybase':
-					$attr = [
-						'driver' => 'dblib',
-						'host' => $options[ 'server' ],
-						'dbname' => $options[ 'database_name' ]
-					];
+                    if ($is_port)
+                    {
+                        $attr[ 'port' ] = $port;
+                    }
 
-					if ($is_port)
-					{
-						$attr[ 'port' ] = $port;
-					}
+                    break;
 
-					break;
+                case 'sybase':
+                    $attr = [
+                        'driver' => 'dblib',
+                        'host' => $options[ 'server' ],
+                        'dbname' => $options[ 'database_name' ]
+                    ];
 
-				case 'oracle':
-					$attr = [
-						'driver' => 'oci',
-						'dbname' => $options[ 'server' ] ?
-							'//' . $options[ 'server' ] . ($is_port ? ':' . $port : ':1521') . '/' . $options[ 'database_name' ] :
-							$options[ 'database_name' ]
-					];
+                    if ($is_port)
+                    {
+                        $attr[ 'port' ] = $port;
+                    }
 
-					if (isset($options[ 'charset' ]))
-					{
-						$attr[ 'charset' ] = $options[ 'charset' ];
-					}
+                    break;
 
-					break;
+                case 'oracle':
+                    $attr = [
+                        'driver' => 'oci',
+                        'dbname' => $options[ 'server' ] ?
+                            '//' . $options[ 'server' ] . ($is_port ? ':' . $port : ':1521') . '/' . $options[ 'database_name' ] :
+                            $options[ 'database_name' ]
+                    ];
 
-				case 'mssql':
-					if (isset($options[ 'driver' ]) && $options[ 'driver' ] === 'dblib')
-					{
-						$attr = [
-							'driver' => 'dblib',
-							'host' => $options[ 'server' ] . ($is_port ? ':' . $port : ''),
-							'dbname' => $options[ 'database_name' ]
-						];
+                    if (isset($options[ 'charset' ]))
+                    {
+                        $attr[ 'charset' ] = $options[ 'charset' ];
+                    }
 
-						if (isset($options[ 'appname' ]))
-						{
-							$attr[ 'appname' ] = $options[ 'appname' ];
-						}
+                    break;
 
-						if (isset($options[ 'charset' ]))
-						{
-							$attr[ 'charset' ] = $options[ 'charset' ];
-						}
-					}
-					else
-					{
-						$attr = [
-							'driver' => 'sqlsrv',
-							'Server' => $options[ 'server' ] . ($is_port ? ',' . $port : ''),
-							'Database' => $options[ 'database_name' ]
-						];
+                case 'mssql':
+                    if (isset($options[ 'driver' ]) && $options[ 'driver' ] === 'dblib')
+                    {
+                        $attr = [
+                            'driver' => 'dblib',
+                            'host' => $options[ 'server' ] . ($is_port ? ':' . $port : ''),
+                            'dbname' => $options[ 'database_name' ]
+                        ];
 
-						if (isset($options[ 'appname' ]))
-						{
-							$attr[ 'APP' ] = $options[ 'appname' ];
-						}
+                        if (isset($options[ 'appname' ]))
+                        {
+                            $attr[ 'appname' ] = $options[ 'appname' ];
+                        }
 
-						$config = [
-							'ApplicationIntent',
-							'AttachDBFileName',
-							'Authentication',
-							'ColumnEncryption',
-							'ConnectionPooling',
-							'Encrypt',
-							'Failover_Partner',
-							'KeyStoreAuthentication',
-							'KeyStorePrincipalId',
-							'KeyStoreSecret',
-							'LoginTimeout',
-							'MultipleActiveResultSets',
-							'MultiSubnetFailover',
-							'Scrollable',
-							'TraceFile',
-							'TraceOn',
-							'TransactionIsolation',
-							'TransparentNetworkIPResolution',
-							'TrustServerCertificate',
-							'WSID',
-						];
+                        if (isset($options[ 'charset' ]))
+                        {
+                            $attr[ 'charset' ] = $options[ 'charset' ];
+                        }
+                    }
+                    else
+                    {
+                        $attr = [
+                            'driver' => 'sqlsrv',
+                            'Server' => $options[ 'server' ] . ($is_port ? ',' . $port : ''),
+                            'Database' => $options[ 'database_name' ]
+                        ];
 
-						foreach ($config as $value)
-						{
-							$keyname = strtolower(preg_replace(['/([a-z\d])([A-Z])/', '/([^_])([A-Z][a-z])/'], '$1_$2', $value));
+                        if (isset($options[ 'appname' ]))
+                        {
+                            $attr[ 'APP' ] = $options[ 'appname' ];
+                        }
 
-							if (isset($options[ $keyname ]))
-							{
-								$attr[ $value ] = $options[ $keyname ];
-							}
-						}
-					}
+                        $config = [
+                            'ApplicationIntent',
+                            'AttachDBFileName',
+                            'Authentication',
+                            'ColumnEncryption',
+                            'ConnectionPooling',
+                            'Encrypt',
+                            'Failover_Partner',
+                            'KeyStoreAuthentication',
+                            'KeyStorePrincipalId',
+                            'KeyStoreSecret',
+                            'LoginTimeout',
+                            'MultipleActiveResultSets',
+                            'MultiSubnetFailover',
+                            'Scrollable',
+                            'TraceFile',
+                            'TraceOn',
+                            'TransactionIsolation',
+                            'TransparentNetworkIPResolution',
+                            'TrustServerCertificate',
+                            'WSID',
+                        ];
 
-					break;
+                        foreach ($config as $value)
+                        {
+                            $keyname = strtolower(preg_replace(['/([a-z\d])([A-Z])/', '/([^_])([A-Z][a-z])/'], '$1_$2', $value));
 
-				case 'sqlite':
-					$attr = [
-						'driver' => 'sqlite',
-						$options[ 'database_file' ]
-					];
+                            if (isset($options[ $keyname ]))
+                            {
+                                $attr[ $value ] = $options[ $keyname ];
+                            }
+                        }
+                    }
 
-					break;
-			}
-		}
+                    break;
 
-		if (!isset($attr))
-		{
-			throw new InvalidArgumentException('Incorrect connection options');
-		}
+                case 'sqlite':
+                    $attr = [
+                        'driver' => 'sqlite',
+                        $options[ 'database_file' ]
+                    ];
 
-		$driver = $attr[ 'driver' ];
+                    break;
+            }
+        }
 
-		if (!in_array($driver, PDO::getAvailableDrivers()))
-		{
-			throw new InvalidArgumentException("Unsupported PDO driver: {$driver}");
-		}
+        if (!isset($attr))
+        {
+            throw new InvalidArgumentException('Incorrect connection options');
+        }
 
-		unset($attr[ 'driver' ]);
+        $driver = $attr[ 'driver' ];
 
-		$stack = [];
+        if (!in_array($driver, PDO::getAvailableDrivers()))
+        {
+            throw new InvalidArgumentException("Unsupported PDO driver: {$driver}");
+        }
 
-		foreach ($attr as $key => $value)
-		{
-			$stack[] = is_int($key) ? $value : $key . '=' . $value;
-		}
+        unset($attr[ 'driver' ]);
 
-		$dsn = $driver . ':' . implode(';', $stack);
+        $stack = [];
 
-		if (
-			in_array($this->type, ['mysql', 'pgsql', 'sybase', 'mssql']) &&
-			isset($options[ 'charset' ])
-		)
-		{
-			$commands[] = "SET NAMES '{$options[ 'charset' ]}'" . (
-				$this->type === 'mysql' && isset($options[ 'collation' ]) ?
-				" COLLATE '{$options[ 'collation' ]}'" : ''
-			);
-		}
+        foreach ($attr as $key => $value)
+        {
+            $stack[] = is_int($key) ? $value : $key . '=' . $value;
+        }
 
-		$this->dsn = $dsn;
+        $dsn = $driver . ':' . implode(';', $stack);
 
-		try {
-			$this->pdo = new PDO(
-				$dsn,
-				isset($options[ 'username' ]) ? $options[ 'username' ] : null,
-				isset($options[ 'password' ]) ? $options[ 'password' ] : null,
-				$option
-			);
+        if (
+            in_array($this->type, ['mysql', 'pgsql', 'sybase', 'mssql']) &&
+            isset($options[ 'charset' ])
+        )
+        {
+            $commands[] = "SET NAMES '{$options[ 'charset' ]}'" . (
+                $this->type === 'mysql' && isset($options[ 'collation' ]) ?
+                    " COLLATE '{$options[ 'collation' ]}'" : ''
+                );
+        }
 
-			foreach ($commands as $value)
-			{
-				$this->pdo->exec($value);
-			}
-		}
-		catch (PDOException $e) {
-			throw new PDOException($e->getMessage());
-		}
+        $this->dsn = $dsn;
+
+        try {
+            $this->notify('db:connection.before', $options);
+            $this->pdo = new PDO(
+                $dsn,
+                isset($options[ 'username' ]) ? $options[ 'username' ] : null,
+                isset($options[ 'password' ]) ? $options[ 'password' ] : null,
+                $option
+            );
+
+            foreach ($commands as $value)
+            {
+                $this->pdo->exec($value);
+            }
+            $this->notify('db:connection.success', $this->pdo);
+            return $this;
+
+        }
+        catch (PDOException $e) {
+            $this->notify('db:connection.fails', $e);
+            throw new PDOException($e->getMessage());
+        }
 	}
 
 	public function query($query, $map = [])
@@ -355,6 +372,7 @@ class Medoo
 			$this->logs = [[$query, $map]];
 		}
 
+		$this->notify('db:query.before', $query);
 		$statement = $this->pdo->prepare($query);
 
 		if (!$statement)
@@ -373,6 +391,7 @@ class Medoo
 		}
 
 		$execute = $statement->execute();
+		$this->notify('db:query.after', $execute);
 
 		$this->errorInfo = $statement->errorInfo();
 
@@ -502,7 +521,7 @@ class Medoo
 			'integer' => PDO::PARAM_INT,
 			'double' => PDO::PARAM_STR,
 			'boolean' => PDO::PARAM_BOOL,
-			'string' => PDO::PARAM_STR,
+			'' => PDO::PARAM_STR,
 			'object' => PDO::PARAM_STR,
 			'resource' => PDO::PARAM_LOB
 		];
@@ -523,7 +542,7 @@ class Medoo
 	{
 		if (!preg_match('/^[a-zA-Z0-9_]+(\.?[a-zA-Z0-9_]+)?$/i', $string))
 		{
-			throw new InvalidArgumentException("Incorrect column name \"$string\"");
+			throw new InvalidArgumentException("Incorrect column name \"$\"");
 		}
 
 		if (strpos($string, '.') !== false)
@@ -713,7 +732,7 @@ class Medoo
 							case 'integer':
 							case 'double':
 							case 'boolean':
-							case 'string':
+							case '':
 								$stack[] = $column . ' != ' . $map_key;
 								$map[ $map_key ] = $this->typeMap($value, $type);
 								break;
@@ -810,7 +829,7 @@ class Medoo
 						case 'integer':
 						case 'double':
 						case 'boolean':
-						case 'string':
+						case '':
 							$stack[] = $column . ' = ' . $map_key;
 							$map[ $map_key ] = $this->typeMap($value, $type);
 							break;
@@ -1466,7 +1485,7 @@ class Medoo
 						case 'boolean':
 						case 'integer':
 						case 'double':
-						case 'string':
+						case '':
 							$map[ $map_key ] = $this->typeMap($value, $type);
 							break;
 					}
@@ -1535,7 +1554,7 @@ class Medoo
 					case 'boolean':
 					case 'integer':
 					case 'double':
-					case 'string':
+					case '':
 						$map[ $map_key ] = $this->typeMap($value, $type);
 						break;
 				}
@@ -1849,4 +1868,43 @@ class Medoo
 
 		return $output;
 	}
+
+    private function initEventGroup($event = "*")
+    {
+        if (!isset($this->observers[$event])) {
+            $this->observers[$event] = [];
+        }
+    }
+
+    private function getEventObservers($event = "*")
+    {
+        $this->initEventGroup($event);
+        $group = $this->observers[$event];
+        $all = $this->observers["*"];
+
+        return array_merge($group, $all);
+    }
+
+    public function attach(\SplObserver $observer,  $event = "*")
+    {
+        $this->initEventGroup($event);
+
+        $this->observers[$event][] = $observer;
+    }
+
+    public function detach(\SplObserver $observer,  $event = "*")
+    {
+        foreach ($this->getEventObservers($event) as $key => $s) {
+            if ($s === $observer) {
+                unset($this->observers[$event][$key]);
+            }
+        }
+    }
+
+    public function notify( $event = "*", $data = null)
+    {
+        foreach ($this->getEventObservers($event) as $observer) {
+            $observer->update($this, $event, $data);
+        }
+    }
 }

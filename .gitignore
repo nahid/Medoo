@@ -1,7 +1,10 @@
 #################
 ## Eclipse
 #################
-
+example
+.idea
+composer.lock
+vendor
 *.pydevproject
 .project
 .metadata

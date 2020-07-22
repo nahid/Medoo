@@ -385,8 +385,8 @@ class Medoo implements \SplSubject
 			$this->logs = [[$query, $map]];
 		}
 
-		$this->notify(self::EVENT_QUERY_BEFORE, $query);
-		$this->notify(self::EVENT_QUERY_START_AT, microtime(true));
+        $this->notify(self::EVENT_QUERY_START_AT, microtime(true));
+        $this->notify(self::EVENT_QUERY_BEFORE, [$query, $map]);
 		$statement = $this->pdo->prepare($query);
 
 		if (!$statement)
